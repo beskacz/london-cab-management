@@ -26,22 +26,24 @@ This repository includes **Docker Compose** for a quick local stack: **Apache + 
 
 MySQL is exposed on **localhost:3306** by default (`MYSQL_PORT`) for GUI clients. Data is stored in the `gibbon_mysql_data` volume.
 
-### Docker + [Portless](https://github.com/vercel-labs/portless)
+### HTTPS with [Portless](https://github.com/vercel-labs/portless) (recommended)
 
-Use [Portless](https://portless.sh) for a stable **`*.localhost` URL** (no `:8080` in the address bar when using the HTTPS proxy on port 443).
+**Yes — use Portless for HTTPS.** The Compose stack only serves **plain HTTP** on the loopback port (Apache in the `app` container). You do **not** need a second container (Caddy, Traefik, etc.) for TLS if you use Portless: it runs a **local HTTPS reverse proxy** (TLS on **443** by default), terminates TLS, and forwards to `http://127.0.0.1:8080` (or whatever `GIBBON_HTTP_PORT` is).
 
 1. Install (requires Node.js 20+): `npm install -g portless`
 2. Start the stack: `docker compose up --build`
-3. Point Portless at the published web port (must match `GIBBON_HTTP_PORT` in `.env`, default **8080**):
+3. Register the Gibbon HTTP port with Portless (must match `GIBBON_HTTP_PORT` in `.env`, default **8080**):
 
    ```bash
    portless alias gibbon 8080
    ```
 
-4. Run `portless list` and open the URL it shows for `gibbon` (typically **`https://gibbon.localhost`** after the proxy is running). On first run, Portless may prompt to trust a local CA.
-5. During Gibbon setup, set the **system base URL** to that same origin (e.g. `https://gibbon.localhost`) so links and redirects match how you open the site.
+4. Run `portless list` and open the URL for `gibbon` — usually **`https://gibbon.localhost`** with no port in the bar. The first time, Portless may install/trust a **local CA** so the browser accepts the certificate.
+5. In Gibbon’s installer (or **System Admin → System Settings**), set the **absolute / base URL** to that same **`https://…`** origin so cookies, redirects, and links stay correct.
 
-The app container maps HTTP to **`127.0.0.1:${GIBBON_HTTP_PORT}`** so only local processes (including Portless) can reach it by default.
+The app is bound to **`127.0.0.1:${GIBBON_HTTP_PORT}`** so only local tools (including the Portless proxy) can hit it.
+
+**Plain HTTP only:** use `http://127.0.0.1:8080` if you skip Portless.
 
 ## Documentation
 

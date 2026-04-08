@@ -12,8 +12,9 @@ services:
         condition: service_healthy
 
   db:
+    # mysql:8 tracks 8.4+; mysql_native_password default plugin was removed — PHP 8.2 PDO works with caching_sha2_password.
     image: mysql:8
-    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-gibbon_root}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-gibbon}

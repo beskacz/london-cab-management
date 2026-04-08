@@ -18,13 +18,30 @@ This repository includes **Docker Compose** for a quick local stack: **Apache + 
 
 1. Copy environment defaults (optional): `cp .env.example .env`
 2. Start: `docker compose up --build`
-3. Open **http://localhost:8080** (or the port in `GIBBON_HTTP_PORT`).
+3. Open **http://127.0.0.1:8080** (or the port in `GIBBON_HTTP_PORT`; bound to loopback only).
 4. On first boot, the app container runs `composer install` if `vendor/` is missing.
 5. Run the **Gibbon installer** in the browser. Use this database connection:
    - **Host:** `db` (the Compose service name)
    - **Database / user / password:** match `.env` (defaults: `gibbon` / `gibbon` / `gibbon`, root password `gibbon_root`)
 
 MySQL is exposed on **localhost:3306** by default (`MYSQL_PORT`) for GUI clients. Data is stored in the `gibbon_mysql_data` volume.
+
+### Docker + [Portless](https://github.com/vercel-labs/portless)
+
+Use [Portless](https://portless.sh) for a stable **`*.localhost` URL** (no `:8080` in the address bar when using the HTTPS proxy on port 443).
+
+1. Install (requires Node.js 20+): `npm install -g portless`
+2. Start the stack: `docker compose up --build`
+3. Point Portless at the published web port (must match `GIBBON_HTTP_PORT` in `.env`, default **8080**):
+
+   ```bash
+   portless alias gibbon 8080
+   ```
+
+4. Run `portless list` and open the URL it shows for `gibbon` (typically **`https://gibbon.localhost`** after the proxy is running). On first run, Portless may prompt to trust a local CA.
+5. During Gibbon setup, set the **system base URL** to that same origin (e.g. `https://gibbon.localhost`) so links and redirects match how you open the site.
+
+The app container maps HTTP to **`127.0.0.1:${GIBBON_HTTP_PORT}`** so only local processes (including Portless) can reach it by default.
 
 ## Documentation
 

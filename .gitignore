@@ -29,6 +29,9 @@ Thumb.db
 *~
 nbproject/
 
+# Local env (e.g. Docker Compose)
+.env
+
 # Vendor Libraries
 /vendor
 

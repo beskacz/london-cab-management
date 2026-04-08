@@ -1,0 +1,33 @@
+# Local Gibbon: Apache + PHP + MySQL. Usage: see README "Docker" section.
+services:
+  app:
+    build: .
+    ports:
+      - "${GIBBON_HTTP_PORT:-8080}:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-gibbon_root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gibbon}
+      MYSQL_USER: ${MYSQL_USER:-gibbon}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-gibbon}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - gibbon_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 20s
+
+volumes:
+  gibbon_mysql_data:

@@ -12,6 +12,20 @@ The Core repository represents the bulk of Gibbon, including all of its primary 
 
 Gibbon is open source, and maintained for the benefit of teachers, students, parents and schools.
 
+## Docker (local development)
+
+This repository includes **Docker Compose** for a quick local stack: **Apache + PHP 8.2 + MySQL 8**.
+
+1. Copy environment defaults (optional): `cp .env.example .env`
+2. Start: `docker compose up --build`
+3. Open **http://localhost:8080** (or the port in `GIBBON_HTTP_PORT`).
+4. On first boot, the app container runs `composer install` if `vendor/` is missing.
+5. Run the **Gibbon installer** in the browser. Use this database connection:
+   - **Host:** `db` (the Compose service name)
+   - **Database / user / password:** match `.env` (defaults: `gibbon` / `gibbon` / `gibbon`, root password `gibbon_root`)
+
+MySQL is exposed on **localhost:3306** by default (`MYSQL_PORT`) for GUI clients. Data is stored in the `gibbon_mysql_data` volume.
+
 ## Documentation
 
 For full documentation, visit [docs.gibbonedu.org](https://docs.gibbonedu.org).

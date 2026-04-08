@@ -25,7 +25,6 @@ use Omnipay\Omnipay;
 use Omnipay\Common\AbstractGateway as OmnipayGateway;
 use Omnipay\PayPal\ProGateway as OmnipayPaypalProGateway;
 use Omnipay\Stripe\AbstractGateway as OmnipayStripeGateway;
-use Omnipay\Common\Message\RedirectResponseInterface as OmnipayRedirectResponse;
 use Gibbon\Contracts\Services\Session;
 use Gibbon\Domain\System\SettingGateway;
 use Gibbon\Domain\Finance\PaymentGateway;
@@ -153,6 +152,10 @@ class Payment implements PaymentInterface
             return self::RETURN_ERROR_AMOUNT;
         }
 
+        if ($this->paymentGatewaySetting === 'PayU') {
+            return $this->requestPaymentPayU($amount, $reason);
+        }
+
         // Send purchase request to the payment gateway
         $options = $this->getPaymentRequestOptions($amount, $reason);
         $response = $this->omnipay->purchase($options)->setCurrency($this->currency)->send();
@@ -184,6 +187,8 @@ class Payment implements PaymentInterface
 
         $paymentState = $_REQUEST['paymentState'] ?? '';
         if ($paymentState == 'cancel') {
+            $this->session->remove('paymentPayuOrderId');
+            $this->session->remove('paymentPayuExpectedMinor');
             $this->result['status'] = 'Cancelled';
             return self::RETURN_CANCEL;
         }
@@ -257,9 +262,79 @@ class Payment implements PaymentInterface
                 $this->omnipay = Omnipay::create('Stripe\Checkout');
                 $this->omnipay->setApiKey($this->settingGateway->getSettingByScope('System', 'paymentAPIKey'));
                 break;
+
+            case 'PayU':
+                return $this->isPayUConfigured();
         }
 
         return !empty($this->omnipay);
+    }
+
+    protected function isPayUConfigured(): bool
+    {
+        $posId = $this->settingGateway->getSettingByScope('System', 'paymentAPIUsername');
+        $secret = $this->settingGateway->getSettingByScope('System', 'paymentAPIPassword');
+
+        return !empty($posId) && !empty($secret);
+    }
+
+    protected function createPayUClient(): PayUEuropeClient
+    {
+        $env = $this->settingGateway->getSettingByScope('System', 'paymentAPIKey');
+        $env = $env === 'sandbox' ? 'sandbox' : 'production';
+
+        return new PayUEuropeClient(
+            $env,
+            (string) $this->settingGateway->getSettingByScope('System', 'paymentAPIUsername'),
+            (string) $this->settingGateway->getSettingByScope('System', 'paymentAPIPassword')
+        );
+    }
+
+    /**
+     * Convert a decimal amount to minor units (e.g. GBP/EUR cents). Assumes two decimal places.
+     */
+    protected function amountToMinorUnits(float $amount): int
+    {
+        return (int) round($amount * 100);
+    }
+
+    protected function requestPaymentPayU($amount, $reason): string
+    {
+        try {
+            $client = $this->createPayUClient();
+            $accessToken = $client->getAccessToken();
+            $ft = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $this->foreignTable);
+            $ftid = preg_replace('/[^a-zA-Z0-9_]/', '', (string) $this->foreignTableID);
+            $extOrderId = 'gibbon_'.$ft.'_'.$ftid.'_'.bin2hex(random_bytes(8));
+            $continueUrl = $this->returnURL.'&paymentState=confirm&'.http_build_query([
+                'amount' => $amount,
+                'reason' => $reason,
+            ]);
+            $customerIp = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+            if (!filter_var($customerIp, FILTER_VALIDATE_IP)) {
+                $customerIp = '127.0.0.1';
+            }
+            $minor = $this->amountToMinorUnits((float) $amount);
+            $result = $client->createOrder(
+                $accessToken,
+                $continueUrl,
+                '',
+                $customerIp,
+                $reason,
+                $this->currency,
+                $minor,
+                $extOrderId,
+                $reason
+            );
+            $this->session->set('paymentPayuOrderId', $result['orderId']);
+            $this->session->set('paymentPayuExpectedMinor', (string) $minor);
+            header('Location: '.$result['redirectUri']);
+            exit;
+        } catch (\Throwable $e) {
+            error_log('PayU requestPayment: '.$e->getMessage());
+
+            return self::RETURN_ERROR_CONNECT;
+        }
     }
 
     protected function getPaymentRequestOptions($amount, $reason)
@@ -305,6 +380,10 @@ class Payment implements PaymentInterface
 
     protected function getPaymentConfirmation($amount)
     {
+        if ($this->paymentGatewaySetting === 'PayU') {
+            return $this->getPaymentConfirmationPayU($amount);
+        }
+
         $token = $_GET['token'] ?? '';
 
         if (empty($token)) {
@@ -336,6 +415,50 @@ class Payment implements PaymentInterface
         return $response;
     }
 
+    /**
+     * @return PayUGatewayResponse|false
+     */
+    protected function getPaymentConfirmationPayU($amount)
+    {
+        $orderId = $this->session->get('paymentPayuOrderId');
+        $expectedMinor = $this->session->get('paymentPayuExpectedMinor');
+        $this->session->remove('paymentPayuOrderId');
+        $this->session->remove('paymentPayuExpectedMinor');
+
+        if (empty($orderId)) {
+            return false;
+        }
+
+        try {
+            $client = $this->createPayUClient();
+            $accessToken = $client->getAccessToken();
+            $order = $client->getOrder($accessToken, $orderId);
+            if ($order === null) {
+                return false;
+            }
+            if ($expectedMinor !== null && (string) ($order['totalAmount'] ?? '') !== (string) $expectedMinor) {
+                error_log('PayU confirmation: totalAmount mismatch');
+
+                return false;
+            }
+
+            $paymentId = null;
+            foreach ($order['properties'] ?? [] as $prop) {
+                if (($prop['name'] ?? '') === 'PAYMENT_ID') {
+                    $paymentId = $prop['value'] ?? null;
+                }
+            }
+
+            $status = $order['status'] ?? '';
+
+            return new PayUGatewayResponse($status === 'COMPLETED', $order, $paymentId);
+        } catch (\Throwable $e) {
+            error_log('PayU getPaymentConfirmation: '.$e->getMessage());
+
+            return false;
+        }
+    }
+
     protected function handlePaymentResponse($response)
     {
         if (empty($response)) {
@@ -348,7 +471,9 @@ class Payment implements PaymentInterface
             'success' => $response->isSuccessful(),
             'code'    => $response->getCode(),
             'message' => $response->getMessage(),
-            'token'   => $_GET['token'] ?? null,
+            'token'   => $this->paymentGatewaySetting === 'PayU'
+                ? ($response->getData()['payu_orderId'] ?? null)
+                : ($_GET['token'] ?? null),
         ];
 
         // Transform transaction information unique to each gateway into a common format
@@ -373,6 +498,17 @@ class Payment implements PaymentInterface
                     'receiptID'     => null,
                     'amount'        => !empty($data['amount_total']) ? ($data['amount_total'] / 100.0) : 0,
                     'payer'         => $data['customer'] ?? null,
+                ];
+
+                break;
+
+            case 'PayU':
+                $result += [
+                    'status'        => $response->isSuccessful() ? 'Complete' : ($response->isPending() ? 'Pending' : 'Failed'),
+                    'transactionID' => $data['payu_paymentId'] ?? ($data['payu_orderId'] ?? null),
+                    'receiptID'     => null,
+                    'amount'        => isset($data['payu_totalAmount']) ? (floatval($data['payu_totalAmount']) / 100.0) : 0,
+                    'payer'         => null,
                 ];
 
                 break;

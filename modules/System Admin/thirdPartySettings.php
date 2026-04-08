@@ -133,6 +133,7 @@ if (isActionAccessible($guid, $connection2, '/modules/System Admin/thirdPartySet
     $paymentGateways = [
         'PayPal' => __('PayPal'),
         'Stripe' => __('Stripe'),
+        'PayU' => __('PayU'),
     ];
     $setting = $settingGateway->getSettingByScope('System', 'paymentGateway', true);
     $row = $form->addRow()->addClass('paymentGateway');
@@ -143,18 +144,20 @@ if (isActionAccessible($guid, $connection2, '/modules/System Admin/thirdPartySet
             ->placeholder()
             ->required();
 
+    $form->toggleVisibilityByClass('paypalPayuSettings')->onSelect($setting['name'])->when(['PayPal', 'PayU']);
     $form->toggleVisibilityByClass('paypalSettings')->onSelect($setting['name'])->when('PayPal');
     $form->toggleVisibilityByClass('stripeSettings')->onSelect($setting['name'])->when('Stripe');
+    $form->toggleVisibilityByClass('payuSettings')->onSelect($setting['name'])->when('PayU');
     $form->toggleVisibilityByClass('paymentTest')->onSelect($setting['name'])->whenNot('');
 
     $setting = $settingGateway->getSettingByScope('System', 'paymentAPIUsername', true);
-    $row = $form->addRow()->addClass('paypalSettings');
-        $row->addLabel($setting['name'], __($setting['nameDisplay']))->description(__($setting['description']));
+    $row = $form->addRow()->addClass('paypalPayuSettings');
+        $row->addLabel($setting['name'], __($setting['nameDisplay']))->description(__($setting['description']).' '.__('For PayU, use POS ID (OAuth client_id).'));
         $row->addTextField($setting['name'])->setValue($setting['value'])->required();
 
     $setting = $settingGateway->getSettingByScope('System', 'paymentAPIPassword', true);
-    $row = $form->addRow()->addClass('paypalSettings');
-        $row->addLabel($setting['name'], __($setting['nameDisplay']))->description(__($setting['description']));
+    $row = $form->addRow()->addClass('paypalPayuSettings');
+        $row->addLabel($setting['name'], __($setting['nameDisplay']))->description(__($setting['description']).' '.__('For PayU, use OAuth client_secret.'));
         $row->addTextField($setting['name'])->setValue($setting['value'])->required();
 
     $setting = $settingGateway->getSettingByScope('System', 'paymentAPISignature', true);
@@ -166,6 +169,15 @@ if (isActionAccessible($guid, $connection2, '/modules/System Admin/thirdPartySet
     $row = $form->addRow()->addClass('stripeSettings');
         $row->addLabel($setting['name'], __($setting['nameDisplay']))->description(__($setting['description']));
         $row->addTextField($setting['name'])->setValue($setting['value'])->required();
+
+    $setting = $settingGateway->getSettingByScope('System', 'paymentAPIKey', true);
+    $payuEnv = in_array($setting['value'], ['sandbox', 'production'], true) ? $setting['value'] : 'production';
+    $row = $form->addRow()->addClass('payuSettings');
+        $row->addLabel($setting['name'], __('PayU environment'))->description(__('Sandbox uses secure.snd.payu.com; production uses secure.payu.com.'));
+        $row->addSelect($setting['name'])
+            ->fromArray(['production' => __('Production'), 'sandbox' => __('Sandbox')])
+            ->selected($payuEnv)
+            ->required();
 
     // Test Payment
     if ($session->get('enablePayments') == 'Y') {
